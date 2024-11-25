@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph, END
 import json
 import os
 
-from agent import AgentState, agent_node, tool_node, should_continue
+from modules.agent_utils import AgentState, agent_node, tool_node, should_continue
 
 with open("./config.json") as f:
     config = json.load(f)
