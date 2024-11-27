@@ -5,7 +5,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 import json
 import os
 
-with open("./config.json") as f:
+with open("../config.json") as f:
     config = json.load(f)
 
 os.environ['TAVILY_API_KEY'] = config['tavily_api_key']
