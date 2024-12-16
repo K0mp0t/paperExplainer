@@ -49,10 +49,10 @@ def extract_tables(pdf_path: str = None, stream: IOBase = None) -> list[list[lis
 def process_pdf(pdf_path: str = None, stream: IOBase = None) -> dict:
     """Process a PDF file and extract text, images, and tables"""
     text = extract_text(pdf_path, stream)
-    images = extract_images(pdf_path, stream)
+    # images = extract_images(pdf_path, stream)
     tables = extract_tables(pdf_path, stream)
     return {
         "text": text,
-        "images": images,
+        # "images": images,
         "tables": tables
     }
