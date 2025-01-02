@@ -124,6 +124,27 @@ class ExtendedArxivRetriever(BaseTool, ABC):
         return parsed_pdf['text']
 
 
+class QnAToolInput(BaseModel):
+    arxiv_id: str = Field(description="your question with context")
+
+
+class QnATool(BaseTool, ABC):
+    name: str = 'qna_tool'
+    description: str = ('This tool allows you to ask LLM a question with large context (for example, a scientific paper '
+                        'full text or its source code). The answer is returned as plain text. Highly useful if you need '
+                        'to better understand some details of a paper.')
+    model: BaseChatModel
+    args_schema: Type[BaseModel] = QnAToolInput
+
+    def _run(self, query: str) -> str:
+        """Use the tool."""
+        return self.model.invoke(input=query).content
+
+    async def _arun(self, query: str) -> str:
+        """Use the tool asynchronously."""
+        return self.model.invoke(input=query).content
+
+
 def tool_node(state: AgentState) -> dict[str: str]:
     tools_by_name = {tool.name: tool for tool in state["tools"]}
     outputs = []
