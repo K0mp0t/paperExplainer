@@ -32,3 +32,14 @@ def img2b64(img: np.ndarray[np.uint8]) -> str:
 
 def b642img(b64: str) -> np.ndarray[np.uint8]:
     return cv2.imdecode(np.frombuffer(base64.b64decode(b64), np.uint8), cv2.IMREAD_UNCHANGED)
+
+
+def print_stream(stream):
+    idx = 0
+    for s in stream:
+        for message in s["messages"][idx:]:
+            idx += 1
+            if isinstance(message, tuple):
+                print(message)
+            else:
+                message.pretty_print()

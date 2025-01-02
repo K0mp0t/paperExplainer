@@ -1,6 +1,7 @@
 from langchain_community.tools.arxiv.tool import ArxivQueryRun
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, ToolMessage
+from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain.tools import BaseTool
 from langchain_community.utilities.arxiv import ArxivAPIWrapper
@@ -174,3 +175,27 @@ def should_continue(state: AgentState):
         return "continue"
     else:
         return "end"
+
+
+def build_graph():
+    workflow = StateGraph(AgentState)
+
+    workflow.add_node("agent_node", agent_node)
+    workflow.add_node("tools_node", tool_node)
+
+    workflow.set_entry_point("agent_node")
+
+    workflow.add_conditional_edges(
+        "agent_node",
+        should_continue,
+        {
+            "continue": "tools_node",
+            "end": END,
+        },
+    )
+
+    workflow.add_edge("tools_node", "agent_node")
+
+    graph = workflow.compile()
+
+    return graph
