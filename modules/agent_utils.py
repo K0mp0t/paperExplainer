@@ -1,6 +1,6 @@
 from langchain_community.tools.arxiv.tool import ArxivQueryRun
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, ToolMessage
+from langchain_core.messages import BaseMessage, ToolMessage, SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain.tools import BaseTool
@@ -12,7 +12,7 @@ from requests_futures.sessions import FuturesSession
 import logging
 import re
 from pydantic import BaseModel, Field
-from typing import Annotated, Sequence, TypedDict, Type, Any
+from typing import Annotated, Sequence, TypedDict, Type, Any, List, Dict, Union
 from abc import ABC
 import json
 
@@ -21,9 +21,10 @@ from modules.pdf_utils import process_pdf
 
 class AgentState(TypedDict):
     """The state of the agent."""
-    messages: Annotated[Sequence[BaseMessage], add_messages]
+    messages: Annotated[List[BaseMessage], add_messages]
     model: BaseChatModel
     tools: Sequence[BaseTool]
+    system_message: BaseMessage
 
 
 class ExtendedArxivAPIWrapper(ArxivAPIWrapper):
@@ -65,7 +66,7 @@ class ExtendedArxivQueryRun(ArxivQueryRun):  # type: ignore[override, override]
 
 
 class ExtendedArxivRetrieverInput(BaseModel):
-    arxiv_id: str = Field(description="arxiv paper id")
+    arxiv_id: Union[str, float] = Field(description="arxiv paper id")
 
 
 class ExtendedArxivRetriever(BaseTool, ABC):
@@ -73,7 +74,8 @@ class ExtendedArxivRetriever(BaseTool, ABC):
     description: str = (
         "Extended arxiv tool: it can retrieve full text including abstract, appendices and references with the arxiv id."
         "Before performing a search make sure you've found the right arxiv ID."
-        "Use it only when you need full text for better paper understanding. Input must be a valid arxiv paper id."
+        "Use it only when you need full text for better paper understanding. "
+        "Input must be a string with valid arxiv paper id."
     )
     return_direct: bool = True
     args_schema: Type[BaseModel] = ExtendedArxivRetrieverInput
@@ -91,26 +93,33 @@ class ExtendedArxivRetriever(BaseTool, ABC):
 
     def _run(self, arxiv_id: str) -> list[dict[Any, Any]]:
         """Use the tool."""
+        arxiv_id = str(arxiv_id)
         if not self.is_arxiv_identifier(arxiv_id):
-            return [{'type': 'text', 'text': 'Paper not found, perhaps the arxiv id is incorrect. '
-                                             'Remember to remove preprint version and link attributes like http:// from arxiv id and try again'}]
+            return [{'type': 'text', 'text': 'Paper not found, perhaps the arxiv id is incorrect. Valid arxiv id should '
+                                             'look like YYMM.NNNNN. Remember to remove preprint version and link '
+                                             'attributes like http:// from arxiv id and try again'}]
         query = 'id:' + arxiv_id
 
         # arxiv ids are unique so we can just use first result
         result = next(Client().results(Search(query=query, max_results=1)), None)
 
         if result is None:
-            return [{'type': 'text', 'text': 'Paper not found, perhaps the arxiv id is incorrect. '
-                                             'Remember to remove preprint version and link attributes like http:// from arxiv id and try again'}]
+            return [{'type': 'text', 'text': 'Paper not found, perhaps the arxiv id is incorrect. Valid arxiv id should '
+                                             'look like YYMM.NNNNN. Remember to remove preprint version and link '
+                                             'attributes like http:// from arxiv id and try again'}]
 
         file = requests.get(result.pdf_url).content
         parsed_pdf = process_pdf(stream=file)
 
-        return parsed_pdf['text']
+        return [{'text': parsed_pdf['text']}]
 
     async def _arun(self, arxiv_id: str) -> list[dict[Any, Any]]:
         """Use the tool asynchronously."""
-
+        arxiv_id = str(arxiv_id)
+        if not self.is_arxiv_identifier(arxiv_id):
+            return [{'type': 'text', 'text': 'Paper not found, perhaps the arxiv id is incorrect. Valid arxiv id should '
+                                             'look like YYMM.NNNNN. Remember to remove preprint version and link '
+                                             'attributes like http:// from arxiv id and try again'}]
         query = 'id:' + arxiv_id
 
         result = next(Client().results(Search(query=query, max_results=1)), None)
@@ -123,27 +132,6 @@ class ExtendedArxivRetriever(BaseTool, ABC):
         parsed_pdf = process_pdf(stream=file)
 
         return parsed_pdf['text']
-
-
-class QnAToolInput(BaseModel):
-    arxiv_id: str = Field(description="your question with context")
-
-
-class QnATool(BaseTool, ABC):
-    name: str = 'qna_tool'
-    description: str = ('This tool allows you to ask LLM a question with large context (for example, a scientific paper '
-                        'full text or its source code). The answer is returned as plain text. Highly useful if you need '
-                        'to better understand some details of a paper.')
-    model: BaseChatModel
-    args_schema: Type[BaseModel] = QnAToolInput
-
-    def _run(self, query: str) -> str:
-        """Use the tool."""
-        return self.model.invoke(input=query).content
-
-    async def _arun(self, query: str) -> str:
-        """Use the tool asynchronously."""
-        return self.model.invoke(input=query).content
 
 
 def tool_node(state: AgentState) -> dict[str: str]:
@@ -163,16 +151,19 @@ def tool_node(state: AgentState) -> dict[str: str]:
 
 
 def agent_node(state: AgentState) -> dict[str: BaseMessage]:
-    model_answer = state["model"].invoke(input=state["messages"])
+    model_answer = state["model"].invoke(input=state["messages"] + [state["system_message"]])
+
+    state["messages"] = list(filter(lambda msg: not (isinstance(msg, ToolMessage) and
+                                                     msg.name == 'extended_arxiv_retriever' and
+                                                     'Paper not found' not in msg.content), state["messages"]))
 
     return {"messages": [model_answer]}
-    
 
-def should_continue(state: AgentState):
+def has_tool_calls(state: AgentState):
     last_message = state["messages"][-1]
 
     if len(last_message.tool_calls) > 0:
-        return "continue"
+        return "tools"
     else:
         return "end"
 
@@ -187,10 +178,10 @@ def build_graph():
 
     workflow.add_conditional_edges(
         "agent_node",
-        should_continue,
+        has_tool_calls,
         {
-            "continue": "tools_node",
-            "end": END,
+            "tools": "tools_node",
+            "end": END
         },
     )
 

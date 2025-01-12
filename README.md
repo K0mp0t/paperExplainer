@@ -11,6 +11,6 @@ to account as much relevant information as possible.
 2. ~~Find or create an extended tool for arxiv search (I'd like to use paper PDFs to extract more information)~~
 3. Make use of Tavily search engine for paper githubs (code also might be helpful)
 4. ~~Make QnA tool for paper full texts and code sources to reduce context needs~~ HEEDS TESTING
-5. Make web interface for agent with streamlit
+5. ~~Make web interface for agent with streamlit~~ 
 6. ???
 7. PROFIT
