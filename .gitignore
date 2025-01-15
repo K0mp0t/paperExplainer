@@ -3,3 +3,4 @@ config.json
 .idea/
 __pycache__/
 **/**.pyc
+**/**.pem

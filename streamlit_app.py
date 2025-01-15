@@ -4,15 +4,16 @@ from langchain_ollama import ChatOllama
 from langchain_community.tools import DuckDuckGoSearchResults
 
 import json
-import os
 
-from modules.agent_utils import (ExtendedArxivRetriever, ExtendedArxivQueryRun, build_graph)
+from modules.agent_utils import (ExtendedArxivRetriever, ExtendedArxivQueryRun, build_graph, GitHubRepoStructureViewer)
 
 with open("./config.json") as f:
     config = json.load(f)
 
 model = ChatOllama(model=config["model"], num_ctx=config["num_ctx"])
-tools = [ExtendedArxivQueryRun(), DuckDuckGoSearchResults(), ExtendedArxivRetriever()]
+tools = [ExtendedArxivQueryRun(), DuckDuckGoSearchResults(), ExtendedArxivRetriever(),
+         GitHubRepoStructureViewer(github_app_id=config["github_app_id"],
+                                   github_app_private_key=config["github_app_private_key"])]
 model = model.bind_tools(tools)
 
 st.title("Research assistant")

@@ -1,17 +1,21 @@
+from github import GithubIntegration, Auth
+from github.Repository import Repository
 from langchain_community.tools.arxiv.tool import ArxivQueryRun
+from langchain_community.utilities.github import GitHubAPIWrapper
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, ToolMessage, SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langchain.tools import BaseTool
 from langchain_community.utilities.arxiv import ArxivAPIWrapper
+from langchain_core.utils import get_from_dict_or_env
 
 from arxiv import Search, Client
 import requests
 from requests_futures.sessions import FuturesSession
 import logging
 import re
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Annotated, Sequence, TypedDict, Type, Any, List, Dict, Union
 from abc import ABC
 import json
@@ -132,6 +136,83 @@ class ExtendedArxivRetriever(BaseTool, ABC):
         parsed_pdf = process_pdf(stream=file)
 
         return parsed_pdf['text']
+
+
+class GitHubRepoStructureViewerInput(BaseModel):
+    repository: str = Field(description="GitHub repository in the format {owner}/{repo}")
+
+
+class GitHubRepoStructureViewer(BaseTool, ABC):
+    name: str = "github_repo_structure_viewer"
+    description: str = (
+        "Tool for viewing the structure of a GitHub repository. Receives a GitHub repository repository in the format "
+        "{owner}/{repo} as string. Returns a multiline string with repository structure for the given repository."
+    )
+    github_app_id: str
+    github_app_private_key: str
+    args_schema: Type[BaseModel] = GitHubRepoStructureViewerInput
+
+    def _list_files(self, github_repo_instance: Repository, directory_path: str) -> List[str]:
+        files: List[str] = []
+
+        contents = github_repo_instance.get_contents(directory_path, ref=github_repo_instance.default_branch)
+
+        for content in contents:
+            if content.type == "dir":
+                files.extend(self._list_files(github_repo_instance, content.path))
+            else:
+                files.append(content.path)
+        return files
+
+    def _run(self, repository: str) -> str:
+        """Use the tool."""
+        try:
+            with open(self.github_app_private_key, "r") as f:
+                self.github_app_private_key = f.read()
+        except Exception:
+            self.github_app_private_key = self.github_app_private_key
+
+        auth = Auth.AppAuth(
+            self.github_app_id,
+            self.github_app_private_key,
+        )
+        gi = GithubIntegration(auth=auth)
+        installation = gi.get_installations()
+        if not installation:
+            raise ValueError(
+                f"Please make sure to install the created github app with id "
+                f"{self.github_app_id} on the repo: {repository}"
+                "More instructions can be found at "
+                "https://docs.github.com/en/apps/using-"
+                "github-apps/installing-your-own-github-app"
+            )
+        try:
+            installation = installation[0]
+        except ValueError as e:
+            raise ValueError(
+                "Please make sure to give correct github parameters "
+                f"Error message: {e}"
+            )
+
+        g = installation.get_github_for_installation()
+        try:
+            repo = g.get_repo(repository)
+        except Exception as e:
+            print(e)
+            return 'Repository not found, please try again'
+
+        files = list()
+        contents = repo.get_contents("", ref=repo.default_branch)
+        for content in contents:
+            if content.type == "dir":
+                files.extend(self._list_files(repo, content.path))
+            else:
+                files.append(content.path)
+
+        if files:
+            return "\n".join(files)
+
+        return "Repository is empty"
 
 
 def tool_node(state: AgentState) -> dict[str: str]:
