@@ -5,7 +5,8 @@ from langchain_community.tools import DuckDuckGoSearchResults
 
 import json
 
-from modules.agent_utils import (ExtendedArxivRetriever, ExtendedArxivQueryRun, build_graph, GitHubRepoStructureViewer)
+from modules.agent_utils import (ExtendedArxivRetriever, ExtendedArxivQueryRun, build_graph, GitHubRepoStructureViewer,
+                                 GitHubFileViewer)
 
 with open("./config.json") as f:
     config = json.load(f)
@@ -13,7 +14,9 @@ with open("./config.json") as f:
 model = ChatOllama(model=config["model"], num_ctx=config["num_ctx"])
 tools = [ExtendedArxivQueryRun(), DuckDuckGoSearchResults(), ExtendedArxivRetriever(),
          GitHubRepoStructureViewer(github_app_id=config["github_app_id"],
-                                   github_app_private_key=config["github_app_private_key"])]
+                                   github_app_private_key=config["github_app_private_key"]),
+         GitHubFileViewer(github_app_id=config["github_app_id"],
+                          github_app_private_key=config["github_app_private_key"])]
 model = model.bind_tools(tools)
 
 st.title("Research assistant")
@@ -28,7 +31,9 @@ for msg in st.session_state.messages:
             st.markdown(msg["content"])
 
 graph = build_graph()
-st.session_state.num_tokens = 0
+if not hasattr(st.session_state, "num_tokens"):
+    st.session_state.num_tokens = 0
+st.metric(label="Number of tokens", value=st.session_state.num_tokens)
 
 if prompt := st.chat_input("What is up?"):
     with st.chat_message("user"):
@@ -58,12 +63,11 @@ if prompt := st.chat_input("What is up?"):
             else:
                 role = 'unknown'
             if hasattr(message, 'usage_metadata'):
-                st.metric(label="Number of tokens", value=message.usage_metadata['total_tokens'],
-                          delta = message.usage_metadata['total_tokens']-st.session_state.num_tokens)
                 st.session_state.num_tokens = message.usage_metadata['total_tokens']
             with st.chat_message(role):
-                st.markdown(message_content[:config['max_response_length']] + ' <TRUNCATED>'
-                            if len(message_content) > config['max_response_length'] else message_content)
+                if len(message_content) > config['max_response_length'] and role == 'tool':
+                    message_content = message_content[:config['max_response_length']] + ' <TRUNCATED>'
+                st.markdown(message_content)
             st.session_state.messages.append({"role": role, "content": message.content, "raw_msg": message})
             printed_msgs += 1
 

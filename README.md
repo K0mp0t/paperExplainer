@@ -10,7 +10,7 @@ to account as much relevant information as possible.
 1. ~~Find sufficient chat model (tried: llama-3.1, llama-3.2vision, qwen2.5)~~
 2. ~~Find or create an extended tool for arxiv search (I'd like to use paper PDFs to extract more information)~~
 3. ~~Make use of Tavily search engine for paper githubs (code also might be helpful)~~
-4. Make use of found githubs: create code-based QnA tool
+4. ~~Make use of found githubs: create code-based QnA tool~~
 5. ~~Make web interface for agent with streamlit~~ 
 6. ???
 7. PROFIT

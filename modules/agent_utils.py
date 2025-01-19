@@ -215,6 +215,68 @@ class GitHubRepoStructureViewer(BaseTool, ABC):
         return "Repository is empty"
 
 
+class GitHubFileViewerInput(BaseModel):
+    repository: str = Field(description="GitHub repository in the format {owner}/{repo}")
+    file_path: str = Field(description="File path relative to GitHub repository")
+
+
+class GitHubFileViewer(BaseTool, ABC):
+    name: str = "github_file_viewer"
+    description: str = (
+        "Tool for viewing files from a GitHub repository. Receives a GitHub repository in format {owner}/{repo} and a "
+        "file path relative to the repository as string. Returns file contents as a string."
+    )
+    github_app_id: str
+    github_app_private_key: str
+    args_schema: Type[BaseModel] = GitHubFileViewerInput
+
+    def _run(self, repository: str, file_path: str) -> str:
+        """Use the tool."""
+        try:
+            with open(self.github_app_private_key, "r") as f:
+                self.github_app_private_key = f.read()
+        except Exception:
+            self.github_app_private_key = self.github_app_private_key
+
+        auth = Auth.AppAuth(
+            self.github_app_id,
+            self.github_app_private_key,
+        )
+        gi = GithubIntegration(auth=auth)
+        installation = gi.get_installations()
+        if not installation:
+            raise ValueError(
+                f"Please make sure to install the created github app with id "
+                f"{self.github_app_id} on the repo: {repository}"
+                "More instructions can be found at "
+                "https://docs.github.com/en/apps/using-"
+                "github-apps/installing-your-own-github-app"
+            )
+        try:
+            installation = installation[0]
+        except ValueError as e:
+            raise ValueError(
+                "Please make sure to give correct github parameters "
+                f"Error message: {e}"
+            )
+
+        g = installation.get_github_for_installation()
+        try:
+            repo = g.get_repo(repository)
+        except Exception as e:
+            print(e)
+            return 'Repository not found, please try again'
+
+        try:
+            file = repo.get_contents(file_path, ref=repo.default_branch)
+            return file.decoded_content.decode("utf-8")
+        except Exception as e:
+            return (
+                f"File not found `{file_path}` on branch"
+                f"`{repo.default_branch}`. Error: {str(e)}"
+            )
+
+
 def tool_node(state: AgentState) -> dict[str: str]:
     tools_by_name = {tool.name: tool for tool in state["tools"]}
     outputs = []
